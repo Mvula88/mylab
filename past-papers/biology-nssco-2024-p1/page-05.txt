@@ -1,0 +1,63 @@
+5
+6116/1/24
+[Turn over
+10	 The graph shows the effect of temperature on the activity of an enzyme.
+100
+50
+0
+20
+40
+60
+temperature / °C
+percentage of 
+maximum activity
+0
+At which temperature is the enzyme most active?
+A	
+15°C
+B	
+35°C
+C	
+45°C
+D	
+55°C
+11	 What will happen to a green plant grown in soil that is deficient in nitrate ions? 
+A	
+It will have large leaves and small flowers. 
+B	
+It will have purple leaves and poor root growth. 
+C	
+It will have yellow leaves and poor overall growth. 
+D	
+It will have white leaves and a thick stem.
+12	 In which part of the human alimentary canal does the digestion of starch begin?
+A	
+mouth
+B	
+oesophagus
+C	
+small intestine
+D	
+stomach
+13	 In which order do these events occur in human nutrition? 
+A	
+digestion 
+ ingestion 
+ absorption 
+ egestion 
+B	
+digestion 
+ ingestion 
+ egestion 
+ absorption 
+C	
+ingestion 
+ digestion 
+ absorption 
+ egestion
+D	
+ingestion 
+ digestion 
+ egestion 
+ absorption
+345363

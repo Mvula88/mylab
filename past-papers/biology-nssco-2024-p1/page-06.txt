@@ -1,0 +1,42 @@
+6
+6116/1/24
+14	 The information below is taken from four packets of food.
+Which food would be suitable for a person suffering from constipation?
+energy                        466 kJ
+protein                           1.5 g
+fat                                  0.4 g
+carbohydrates                27 g
+fibre                               4.9 g
+energy                        163 kJ
+protein                          0.1 g
+fat                                    0 g
+carbohydrates              9.4 g
+fibre                                 1 g
+energy                      1054 kJ
+protein                            19 g
+fat                                  7.3 g
+carbohydrates                27 g
+fibre                               8.1 g
+energy                        458 kJ
+protein                           2.1 g
+fat                                  3.3 g
+carbohydrates                19 g
+fibre                               1.1 g
+A
+B
+D
+C
+15	 The graph shows how the rate of transpiration is affected by factor X.
+rate of  
+transpiration
+                      X
+What could be factor X?
+A	
+humidity
+B	
+light intensity
+C	
+temperature
+D	
+wind speed
+345363

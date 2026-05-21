@@ -1,0 +1,48 @@
+2
+6116/1/24
+1	
+The diagram shows an instrument that can be used in a Biology laboratory.
+0.007 g
+What does the instrument measure?
+A	
+mass
+B	
+temperature
+C	
+time
+D	
+volume
+2	
+Which two taxa are used in naming organisms using the binomial system?
+A	
+family and kingdom
+B	
+family and genus
+C	
+genus and species
+D	
+kingdom and species
+3	
+Palisade cells are found in plant leaves.
+Which feature is present in a palisade cell but not in a liver cell?
+A	
+cell membrane
+B 
+chloroplast
+C	
+cytoplasm
+D 
+nucleus
+4	
+The actual size of an object is 2000 µm.  A drawing of the same object 
+measures 50 mm.
+What is the magnification of the drawing?
+A	
+× 0.025
+B	
+× 25
+C	
+× 100
+D	
+× 100 000
+345363
