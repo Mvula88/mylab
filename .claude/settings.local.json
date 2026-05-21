@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(powershell -Command 'try { Stop-Process -Id 27408 -Force -ErrorAction Stop; '\\\\''killed'\\\\'' } catch { '\\\\''already gone or error: '\\\\'' + $_.Exception.Message }')"
+    ]
+  }
+}
