@@ -409,7 +409,6 @@ begin
     bio_id, 2020, '2', '7(c)', 2, 'paid',
     'free_text',
     E'**(c)** Explain the effects of cutting down a forest on the balance between oxygen and carbon dioxide in the atmosphere.',
-    null,
     E'• Fewer trees → less photosynthesis [1]\n• Less CO₂ is absorbed/removed from atmosphere [1]\n• Less O₂ is released into atmosphere [1]\n• Burning the wood releases stored carbon as CO₂ [1]\n• Result: CO₂ levels increase, O₂ levels decrease [1]\n\nMaximum 2 marks.',
     E'Award marks for linking deforestation to BOTH (i) reduced photosynthesis and (ii) the resulting CO₂ rise / O₂ drop. Full marks require both directions of the gas balance.',
     'Trees are the planet''s CO₂-removal machines. Cut them down and you do two things at once: stop removing CO₂ and stop producing O₂. The atmospheric balance shifts: more CO₂, less O₂.',
