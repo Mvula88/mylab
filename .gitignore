@@ -7,3 +7,6 @@ out
 *.log
 supabase/.temp
 supabase/.branches
+
+# Intermediate page renders from past-paper PDFs (regenerable via scripts/build_*.py)
+scripts/_extracted/
