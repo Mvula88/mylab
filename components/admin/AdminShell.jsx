@@ -9,7 +9,7 @@ const NAV = [
   { href: "/admin/syllabus", label: "Subjects & topics", icon: ListOrdered },
   { href: "/admin/lessons",  label: "Lessons & videos",  icon: FileText },
   { href: "/admin/quizzes",  label: "Quizzes",           icon: FileQuestion, soon: true },
-  { href: "/admin/papers",   label: "Past papers",       icon: ScrollText,   soon: true },
+  { href: "/admin/papers",   label: "Past papers",       icon: ScrollText },
   { href: "/admin/learners", label: "Learners",          icon: Users,        soon: true },
 ];
 

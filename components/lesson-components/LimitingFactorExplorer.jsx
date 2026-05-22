@@ -1,134 +1,326 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import * as THREE from 'three';
+import {
+  createScene, attachOrbitDrag, makeBench, makeBeaker,
+} from '@/components/three/SceneKit';
 
-const serif = '"Fraunces", Georgia, serif';
 const mono = '"IBM Plex Mono", monospace';
-const NAVY = '#1a1f2e';
-const PINK = '#c2185b';
-const GREEN = '#2e7d32';
-const CREAM = '#fdebef';
 
 /**
- * Drag the sliders for CO₂ and temperature.
- * Watch the rate-vs-light-intensity curve plateau move up or down.
- * This is the single most important graph in NSSCO photosynthesis — and the
- * lesson learner sees it change in real time as they change the limiting factor.
+ * 3D mini-lab: Elodea pondweed in a beaker, lamp at adjustable distance,
+ * sliders for CO₂ concentration and temperature.
+ * Bubbles of O₂ rise from the leaves and are collected in an inverted test tube.
+ * The bubble rate (shown on a digital readout) is set by the slowest factor —
+ * the **limiting factor**. This is the photosynthesis Paper 3 experiment, miniaturised.
  */
 export default function LimitingFactorExplorer() {
-  const [co2, setCo2] = useState(0.04);     // % (0.04 = atmospheric, 0.1 = enriched)
-  const [temp, setTemp] = useState(25);     // °C
+  const mountRef = useRef(null);
+  const sceneRef = useRef({});
+  const [light, setLight] = useState(0.6);    // 0..1 (slider for lamp distance, inverted)
+  const [co2, setCo2] = useState(0.06);       // % (atmosphere ~0.04, enriched 0.1+)
+  const [temp, setTemp] = useState(28);       // °C
+  const lightRef = useRef(0.6);
+  const co2Ref = useRef(0.06);
+  const tempRef = useRef(28);
+  const bubbleRateRef = useRef(0);
 
-  // Compute the plateau height of the curve based on CO2 and temp.
-  // Photosynthesis rate = min(light-limited, CO2-limited, enzyme-limited)
-  // Simplified for visual: peak rate is a function of CO2 (linear up to ~0.1%)
-  // and a bell curve in temperature (optimum 30°C, drops above 40°C).
-  const plateau = useMemo(() => {
-    const co2Factor = Math.min(co2 / 0.1, 1);  // 0..1
-    // Bell curve around 30°C, denatures above 40°C
-    const tempFactor = temp < 5 ? 0
-      : temp > 50 ? 0
-      : temp < 30 ? (temp - 5) / 25
-      : temp < 40 ? 1 - (temp - 30) * 0.02
-      : Math.max(0, 1 - (temp - 30) * 0.1);
-    return Math.max(0.05, co2Factor * tempFactor);  // 0..1
-  }, [co2, temp]);
+  useEffect(() => { lightRef.current = light; }, [light]);
+  useEffect(() => { co2Ref.current = co2; }, [co2]);
+  useEffect(() => { tempRef.current = temp; }, [temp]);
 
-  // Build the SVG path for the curve. X axis is light intensity 0..1.
-  // Curve rises linearly until light-limited, then plateaus at `plateau`.
-  const knee = Math.max(0.1, plateau * 0.9);  // light intensity where it plateaus
-  const W = 360, H = 220;
-  const padL = 50, padR = 20, padT = 20, padB = 50;
-  const innerW = W - padL - padR;
-  const innerH = H - padT - padB;
-  const x = (t) => padL + t * innerW;
-  const y = (v) => padT + (1 - v) * innerH;
-  const path = `M ${x(0)} ${y(0)} L ${x(knee)} ${y(plateau)} L ${x(1)} ${y(plateau)}`;
+  useEffect(() => {
+    const mount = mountRef.current;
+    if (!mount) return;
+    const { scene, camera, renderer, dispose } = createScene(mount, {
+      background: 0xf5f1e3,
+      camera: { x: 0.45, y: 0.45, z: 0.7, lookY: 0.13 },
+    });
+    scene.add(makeBench({ width: 1.6, depth: 0.55 }));
 
-  // Reference curve at default conditions (faint)
-  const refPlateau = 0.4;
-  const refKnee = 0.36;
-  const refPath = `M ${x(0)} ${y(0)} L ${x(refKnee)} ${y(refPlateau)} L ${x(1)} ${y(refPlateau)}`;
+    // ── Beaker with water ──────────────────────────────────────────────
+    const beaker = makeBeaker({ radius: 0.11, height: 0.20 });
+    beaker.position.set(0, 0, 0);
+    scene.add(beaker);
+    beaker.userData.setFill(0.85, 0xb8dcf2, 0.45);
 
-  const plateauPct = Math.round(plateau * 100);
+    // ── Elodea pondweed (stem + leaves) inside the beaker ──────────────
+    const greenMat = new THREE.MeshStandardMaterial({ color: 0x2e7d32, roughness: 0.6 });
+    const darkGreenMat = new THREE.MeshStandardMaterial({ color: 0x1f5223, roughness: 0.65 });
+    const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.005, 0.15, 8), darkGreenMat);
+    stem.position.set(0, 0.085, 0);
+    scene.add(stem);
+    const leafPositions = [];
+    for (let i = 0; i < 14; i++) {
+      const angle = i * 0.6;
+      const yOff = 0.02 + i * 0.01;
+      const leaf = new THREE.Mesh(
+        new THREE.SphereGeometry(0.015, 8, 6),
+        greenMat
+      );
+      leaf.scale.set(1, 0.3, 0.6);
+      leaf.position.set(Math.cos(angle) * 0.015, yOff, Math.sin(angle) * 0.015);
+      leaf.rotation.y = angle + Math.PI / 2;
+      scene.add(leaf);
+      leafPositions.push(new THREE.Vector3(leaf.position.x, leaf.position.y, leaf.position.z));
+    }
+
+    // ── Inverted glass funnel over the pondweed ────────────────────────
+    const funnel = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.014, 0.07, 0.08, 24, 1, true),
+      new THREE.MeshPhysicalMaterial({
+        color: 0xfffefb, transparent: true, opacity: 0.25,
+        transmission: 0.9, roughness: 0.05, ior: 1.5, side: THREE.DoubleSide,
+      })
+    );
+    funnel.position.set(0, 0.12, 0);
+    scene.add(funnel);
+
+    // ── Test tube above the funnel collecting O₂ ───────────────────────
+    const tubeMat = new THREE.MeshPhysicalMaterial({
+      color: 0xfffefb, transparent: true, opacity: 0.28,
+      transmission: 0.9, roughness: 0.04, ior: 1.5, side: THREE.DoubleSide,
+    });
+    const testTube = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.014, 0.014, 0.08, 24, 1, true),
+      tubeMat
+    );
+    testTube.position.set(0, 0.2, 0);
+    scene.add(testTube);
+    const tubeBottom = new THREE.Mesh(
+      new THREE.SphereGeometry(0.014, 16, 12, 0, Math.PI * 2, 0, Math.PI / 2),
+      tubeMat
+    );
+    tubeBottom.position.set(0, 0.16, 0);
+    tubeBottom.rotation.x = Math.PI;
+    scene.add(tubeBottom);
+
+    // Gas collected at top of test tube (visible volume that grows)
+    const collectedGas = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.013, 0.013, 0.001, 24),
+      new THREE.MeshBasicMaterial({ color: 0xfefcf3, transparent: true, opacity: 0.7 })
+    );
+    collectedGas.position.set(0, 0.235, 0);
+    scene.add(collectedGas);
+    let gasVolume = 0;  // fraction 0..1
+
+    // ── Lamp (sphere with emissive material), positioned at variable X ─
+    const lampGroup = new THREE.Group();
+    const lampBulb = new THREE.Mesh(
+      new THREE.SphereGeometry(0.025, 16, 12),
+      new THREE.MeshStandardMaterial({
+        color: 0xffefa0, emissive: 0xfff1a0, emissiveIntensity: 1.5,
+      })
+    );
+    lampGroup.add(lampBulb);
+    const lampHolder = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.008, 0.008, 0.22, 12),
+      new THREE.MeshStandardMaterial({ color: 0x44464a, roughness: 0.5, metalness: 0.6 })
+    );
+    lampHolder.position.y = -0.115;
+    lampGroup.add(lampHolder);
+    const lampBase = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.04, 0.05, 0.015, 16),
+      new THREE.MeshStandardMaterial({ color: 0x44464a, roughness: 0.55, metalness: 0.55 })
+    );
+    lampBase.position.y = -0.225;
+    lampGroup.add(lampBase);
+    lampGroup.position.set(0.35, 0.165, 0);
+    scene.add(lampGroup);
+
+    // Actual point light from the lamp
+    const lampLight = new THREE.PointLight(0xfff1a0, 0.8, 1.2);
+    lampLight.position.copy(lampGroup.position);
+    scene.add(lampLight);
+
+    // ── Bubble pool (small white-blue spheres rising from leaves) ──────
+    const bubbleMat = new THREE.MeshPhysicalMaterial({
+      color: 0xeaf6ff, transparent: true, opacity: 0.85,
+      transmission: 0.5, roughness: 0.05, ior: 1.33,
+    });
+    const bubbleGeom = new THREE.SphereGeometry(0.004, 8, 8);
+    const bubblePool = [];
+    for (let i = 0; i < 30; i++) {
+      const b = new THREE.Mesh(bubbleGeom, bubbleMat);
+      b.userData = { active: false, t: 0, x0: 0, z0: 0 };
+      b.visible = false;
+      scene.add(b);
+      bubblePool.push(b);
+    }
+
+    // ── Digital readout sprite (bubbles / min) ─────────────────────────
+    const roCanvas = document.createElement('canvas');
+    roCanvas.width = 360; roCanvas.height = 110;
+    const roTex = new THREE.CanvasTexture(roCanvas);
+    roTex.colorSpace = THREE.SRGBColorSpace;
+    const drawReadout = (rate, limiter) => {
+      const ctx = roCanvas.getContext('2d');
+      ctx.fillStyle = '#fefcf3'; ctx.fillRect(0, 0, 360, 110);
+      ctx.strokeStyle = '#1a1f2e'; ctx.lineWidth = 5; ctx.strokeRect(3, 3, 354, 104);
+      ctx.fillStyle = '#222'; ctx.fillRect(20, 22, 320, 50);
+      ctx.fillStyle = '#7ad59d';
+      ctx.font = "bold 32px 'IBM Plex Mono', monospace";
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(`${rate.toFixed(0)} bubbles/min`, 180, 47);
+      ctx.fillStyle = '#1a1f2e';
+      ctx.font = "11px 'IBM Plex Mono', monospace";
+      ctx.fillText(`limiting factor: ${limiter}`, 180, 90);
+      roTex.needsUpdate = true;
+    };
+    drawReadout(0, '—');
+    const readoutSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: roTex, transparent: true }));
+    readoutSprite.scale.set(0.34, 0.105, 1);
+    readoutSprite.position.set(-0.28, 0.36, 0);
+    scene.add(readoutSprite);
+
+    sceneRef.current = { scene, camera, renderer, dispose };
+    const detach = attachOrbitDrag(camera, renderer.domElement, { lookY: 0.13 });
+
+    // Animation loop — emits bubbles at the rate set by the limiting factor
+    let raf;
+    let lastEmit = performance.now();
+    let frameCount = 0;
+    const animate = (now) => {
+      frameCount++;
+      const L = lightRef.current;            // 0..1
+      const C = co2Ref.current;              // %
+      const T = tempRef.current;             // °C
+
+      // Move the lamp based on light slider (further = dimmer)
+      const lampX = 0.6 - L * 0.4;           // L=1 → close, L=0 → far
+      lampGroup.position.x = lampX;
+      lampLight.position.x = lampX;
+      lampLight.intensity = 0.4 + L * 1.4;
+
+      // Limiting-factor logic: rate = min of three normalised factors
+      const lightFactor = L;                                       // 0..1
+      const co2Factor = Math.min(C / 0.10, 1);                     // 0..1 (saturates at 0.1%)
+      const tempFactor = T < 5 ? 0
+        : T > 50 ? 0
+        : T < 30 ? (T - 5) / 25
+        : T < 40 ? Math.max(0, 1 - (T - 30) * 0.04)
+        : Math.max(0, 1 - (T - 30) * 0.1);
+
+      // Which one is limiting?
+      let limiter = 'light';
+      let limit = lightFactor;
+      if (co2Factor < limit) { limit = co2Factor; limiter = 'CO₂'; }
+      if (tempFactor < limit) { limit = tempFactor; limiter = T < 15 ? 'cold' : T > 40 ? 'denatured enzymes' : 'temperature'; }
+
+      const ratePerMin = Math.round(limit * 90);  // 0..90 bubbles/min
+      bubbleRateRef.current = ratePerMin;
+
+      // Emit bubbles at the correct rate
+      const interval = ratePerMin > 0 ? 60000 / ratePerMin : Infinity;
+      if (now - lastEmit > interval) {
+        lastEmit = now;
+        const leafIdx = Math.floor(Math.random() * leafPositions.length);
+        const start = leafPositions[leafIdx];
+        const b = bubblePool.find((b) => !b.userData.active);
+        if (b) {
+          b.userData.active = true;
+          b.userData.t = 0;
+          b.userData.x0 = start.x;
+          b.userData.z0 = start.z;
+          b.position.set(start.x, start.y, start.z);
+          b.visible = true;
+        }
+      }
+
+      // Animate active bubbles rising to the test tube
+      bubblePool.forEach((b) => {
+        if (!b.userData.active) return;
+        b.userData.t += 0.012;
+        const t = b.userData.t;
+        // path from leaf → up through funnel → into test tube
+        const startY = 0.05, endY = 0.235;
+        const y = startY + t * (endY - startY);
+        // Converge x,z to 0 by the time they reach the funnel neck
+        const k = Math.min(1, t * 1.3);
+        b.position.set(b.userData.x0 * (1 - k), y, b.userData.z0 * (1 - k));
+        // Wobble
+        b.position.x += Math.sin(t * 20 + b.userData.x0 * 100) * 0.001;
+        if (t > 1) {
+          b.userData.active = false;
+          b.visible = false;
+          gasVolume = Math.min(0.07, gasVolume + 0.001);
+        }
+      });
+
+      // Update collected gas volume in test tube
+      collectedGas.scale.y = 1 + gasVolume * 50;
+      collectedGas.position.y = 0.235 - (gasVolume * 50 - 1) * 0.0005;
+
+      // Update readout every ~10 frames
+      if (frameCount % 12 === 0) {
+        drawReadout(ratePerMin, limiter);
+      }
+
+      renderer.render(scene, camera);
+      raf = requestAnimationFrame(animate);
+    };
+    raf = requestAnimationFrame(animate);
+
+    return () => { cancelAnimationFrame(raf); detach(); dispose(); };
+  }, []);
 
   return (
-    <div className="my-6 p-4" style={{
-      backgroundColor: '#fff',
-      border: '1px solid rgba(26,31,46,0.2)',
-    }}>
+    <div className="my-6">
       <div className="text-[10px] uppercase mb-3 opacity-65"
-        style={{ fontFamily: mono, letterSpacing: '0.28em', color: PINK }}>
-        Try it — drag the sliders
+        style={{ fontFamily: mono, letterSpacing: '0.28em', color: '#c2185b' }}>
+        Try it — change light, CO₂ or temperature
       </div>
+      <div ref={mountRef}
+        style={{
+          width: '100%',
+          aspectRatio: '16/10',
+          backgroundColor: '#f5f1e3',
+          border: '1px solid rgba(26,31,46,0.2)',
+          overflow: 'hidden',
+          cursor: 'grab',
+        }} />
+      <div className="text-[9px] uppercase opacity-50 text-right mt-1"
+        style={{ fontFamily: mono, letterSpacing: '0.2em' }}>drag to rotate · readout shows bubbles per minute</div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
-        <label>
-          <div className="text-[11px] uppercase mb-1" style={{ fontFamily: mono, letterSpacing: '0.18em' }}>
-            CO₂ concentration: <strong style={{ color: PINK }}>{(co2 * 100).toFixed(2)} %</strong>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4">
+        <Slider label="Lamp brightness" value={`${(light * 100).toFixed(0)} %`}>
+          <input type="range" min="0" max="1" step="0.01" value={light}
+            onChange={(e) => setLight(Number(e.target.value))}
+            style={{ width: '100%', accentColor: '#c2185b' }} />
+          <div className="flex justify-between text-[9px] opacity-60 mt-0.5" style={{ fontFamily: mono }}>
+            <span>far / dim</span><span>close / bright</span>
           </div>
+        </Slider>
+        <Slider label="CO₂ concentration" value={`${(co2 * 100).toFixed(2)} %`}>
           <input type="range" min="0.01" max="0.15" step="0.005" value={co2}
             onChange={(e) => setCo2(Number(e.target.value))}
-            style={{ width: '100%', accentColor: PINK }} />
-          <div className="text-[9px] opacity-50" style={{ fontFamily: mono }}>
-            atmosphere = 0.04 % · greenhouse = 0.10 %
+            style={{ width: '100%', accentColor: '#c2185b' }} />
+          <div className="flex justify-between text-[9px] opacity-60 mt-0.5" style={{ fontFamily: mono }}>
+            <span>atmospheric (0.04)</span><span>enriched (0.10+)</span>
           </div>
-        </label>
-        <label>
-          <div className="text-[11px] uppercase mb-1" style={{ fontFamily: mono, letterSpacing: '0.18em' }}>
-            Temperature: <strong style={{ color: PINK }}>{temp} °C</strong>
-          </div>
+        </Slider>
+        <Slider label="Temperature" value={`${temp} °C`}>
           <input type="range" min="5" max="50" step="1" value={temp}
             onChange={(e) => setTemp(Number(e.target.value))}
-            style={{ width: '100%', accentColor: PINK }} />
-          <div className="text-[9px] opacity-50" style={{ fontFamily: mono }}>
-            cold &lt; 15 · optimum ~ 30 · denatured &gt; 40
+            style={{ width: '100%', accentColor: '#c2185b' }} />
+          <div className="flex justify-between text-[9px] opacity-60 mt-0.5" style={{ fontFamily: mono }}>
+            <span>cold</span><span>optimum (30)</span><span>denatured</span>
           </div>
-        </label>
-      </div>
-
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
-        {/* Axes */}
-        <line x1={padL} y1={padT} x2={padL} y2={H - padB} stroke={NAVY} strokeWidth="1.5" />
-        <line x1={padL} y1={H - padB} x2={W - padR} y2={H - padB} stroke={NAVY} strokeWidth="1.5" />
-        <polygon points={`${padL},${padT - 5} ${padL - 4},${padT + 3} ${padL + 4},${padT + 3}`} fill={NAVY} />
-        <polygon points={`${W - padR + 5},${H - padB} ${W - padR - 3},${H - padB - 4} ${W - padR - 3},${H - padB + 4}`} fill={NAVY} />
-
-        {/* Reference (faint) */}
-        <path d={refPath} stroke={NAVY} strokeWidth="1.2" strokeDasharray="3,4" fill="none" opacity="0.35" />
-        <text x={W - padR - 10} y={y(refPlateau) + 12} fontFamily={mono} fontSize="8"
-          fill={NAVY} textAnchor="end" opacity="0.55">at standard conditions</text>
-
-        {/* Active curve */}
-        <path d={path} stroke={GREEN} strokeWidth="3" fill="none" strokeLinejoin="round" />
-
-        {/* Plateau marker */}
-        <line x1={padL} y1={y(plateau)} x2={x(knee)} y2={y(plateau)} stroke={GREEN} strokeWidth="0.6" strokeDasharray="2,3" opacity="0.5" />
-        <text x={padL - 6} y={y(plateau) + 3} fontFamily={mono} fontSize="9"
-          fill={GREEN} textAnchor="end" fontWeight="600">{plateauPct}%</text>
-
-        {/* Labels */}
-        <text x={padL + innerW / 2} y={H - 10} fontFamily={mono} fontSize="10"
-          textAnchor="middle" fill={NAVY}>light intensity →</text>
-        <text x={15} y={padT + innerH / 2} fontFamily={mono} fontSize="10"
-          textAnchor="middle" fill={NAVY}
-          transform={`rotate(-90 15 ${padT + innerH / 2})`}>rate of photosynthesis →</text>
-
-        {/* Title */}
-        <text x={padL + 8} y={padT + 12} fontFamily={serif} fontStyle="italic" fontSize="11" fill={PINK}>
-          peak rate: {plateauPct}% of maximum
-        </text>
-      </svg>
-
-      <div className="mt-3 text-[11px] leading-snug" style={{ fontFamily: serif }}>
-        {plateau > 0.7 ? (
-          <span>The line plateaus <strong>high</strong> — your conditions aren''t holding photosynthesis back much. Light is now the limit.</span>
-        ) : plateau > 0.3 ? (
-          <span>The plateau dropped. <strong>{co2 < 0.04 ? 'CO₂' : 'temperature'}</strong> is now limiting the rate even when light is bright.</span>
-        ) : (
-          <span>Plateau is very low. <strong>{temp < 15 ? 'Cold temperature' : temp > 40 ? 'Heat is denaturing enzymes' : 'Very low CO₂'}</strong> is the bottleneck — extra light won''t help.</span>
-        )}
+        </Slider>
       </div>
     </div>
+  );
+}
+
+function Slider({ label, value, children }) {
+  return (
+    <label className="block">
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-[10px] uppercase opacity-75" style={{ fontFamily: mono, letterSpacing: '0.2em' }}>{label}</span>
+        <span className="text-[10px] uppercase font-bold" style={{ fontFamily: mono, letterSpacing: '0.2em', color: '#c2185b' }}>{value}</span>
+      </div>
+      {children}
+    </label>
   );
 }

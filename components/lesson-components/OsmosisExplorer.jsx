@@ -1,109 +1,246 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import * as THREE from 'three';
+import {
+  createScene, attachOrbitDrag, makeBench, makeBeaker,
+} from '@/components/three/SceneKit';
 
-const serif = '"Fraunces", Georgia, serif';
 const mono = '"IBM Plex Mono", monospace';
-const NAVY = '#1a1f2e';
-const PINK = '#c2185b';
-const GREEN = '#2e7d32';
+const serif = '"Fraunces", Georgia, serif';
 
 /**
- * Drag the slider for the external solution concentration.
- * Watch the plant cell visibly swell, stay normal, or shrink and plasmolyse.
- * This makes hypotonic / isotonic / hypertonic feel obvious without three pages of words.
+ * 3D mini-lab: one magnified plant cell inside a beaker.
+ * The learner drags the outside-solute slider; the cell visibly swells
+ * (turgid in pure water), holds steady (isotonic), or shrinks with the
+ * cytoplasm pulling away from the wall (plasmolysis).
+ * Animated water molecules flow IN when outside is dilute, OUT when concentrated.
  */
 export default function OsmosisExplorer() {
-  const [solute, setSolute] = useState(0.5);  // 0 = pure water, 1 = very concentrated sugar
+  const mountRef = useRef(null);
+  const sceneRef = useRef({});
+  const [solute, setSolute] = useState(0.5);  // 0 = pure water, 1 = very concentrated
+  const soluteRef = useRef(0.5);
 
-  // Cell volume responds to outside solute concentration.
-  // Inside cell sap has solute ~0.5. Water moves from low solute to high solute.
-  const inside = 0.5;
-  const diff = solute - inside;  // positive → water leaves cell → shrinks
-  const cellShrink = Math.max(-0.35, Math.min(0.2, diff * 0.7));
-  const scale = 1 - cellShrink;  // <1 shrinks, >1 swells
+  useEffect(() => { soluteRef.current = solute; }, [solute]);
 
-  const state = useMemo(() => {
-    if (solute < 0.35) return { name: 'Hypotonic (pure-ish water outside)', color: GREEN, msg: 'Water moves INTO the cell. The cell pushes against the wall — it is **turgid** (firm). This is how plants stay upright.' };
-    if (solute > 0.65) return { name: 'Hypertonic (concentrated solution outside)', color: PINK, msg: 'Water moves OUT of the cell. The cytoplasm pulls away from the wall — this is called **plasmolysis**. The plant wilts.' };
-    return { name: 'Isotonic (same as cell sap)', color: NAVY, msg: 'No NET movement of water. The cell stays its normal size — **flaccid** (not firm, not shrunken).' };
-  }, [solute]);
+  useEffect(() => {
+    const mount = mountRef.current;
+    if (!mount) return;
+    const { scene, camera, renderer, dispose } = createScene(mount, {
+      background: 0xf5f1e3,
+      camera: { x: 0.35, y: 0.36, z: 0.55, lookY: 0.13 },
+    });
+    scene.add(makeBench({ width: 1.2, depth: 0.5 }));
 
-  // Visual: outer box = cell wall, inner shape = cell membrane + cytoplasm
-  const baseW = 120, baseH = 130;
-  const innerW = baseW * scale;
-  const innerH = baseH * scale;
-  const cx = 130;
-  const cy = 90;
+    // ── Beaker with sucrose solution ───────────────────────────────────
+    const beaker = makeBeaker({ radius: 0.12, height: 0.22 });
+    beaker.position.set(0, 0, 0);
+    scene.add(beaker);
+    let fluidColor = new THREE.Color(0xa7d4ec);
+    beaker.userData.setFill(0.88, fluidColor.getHex(), 0.55);
+
+    // Helper to recolour fluid as solute concentration changes
+    const setFluid = (s) => {
+      // light blue (dilute) → caramel (concentrated)
+      const c = new THREE.Color().lerpColors(
+        new THREE.Color(0xb8dcf2), new THREE.Color(0xc8a058), s
+      );
+      beaker.userData.setFill(0.88, c.getHex(), 0.55 + s * 0.15);
+    };
+
+    // ── Magnified plant cell, suspended in the centre of the fluid ─────
+    const CELL = 0.085;        // overall size — the rigid wall
+    const cellGroup = new THREE.Group();
+    cellGroup.position.set(0, 0.11, 0);
+    scene.add(cellGroup);
+
+    // Cell wall (rigid, doesn''t scale)
+    const wallMat = new THREE.MeshStandardMaterial({
+      color: 0x2e7d32, transparent: true, opacity: 0.92,
+      roughness: 0.6, metalness: 0.05,
+    });
+    const wallEdges = new THREE.LineSegments(
+      new THREE.EdgesGeometry(new THREE.BoxGeometry(CELL, CELL, CELL)),
+      new THREE.LineBasicMaterial({ color: 0x2e7d32, linewidth: 2 })
+    );
+    cellGroup.add(wallEdges);
+    // Translucent green wall faces
+    const wallFaces = new THREE.Mesh(
+      new THREE.BoxGeometry(CELL, CELL, CELL),
+      new THREE.MeshPhysicalMaterial({
+        color: 0x86c191, transparent: true, opacity: 0.18,
+        transmission: 0.55, roughness: 0.4, side: THREE.DoubleSide,
+      })
+    );
+    cellGroup.add(wallFaces);
+
+    // Cell membrane + cytoplasm (the bit that shrinks/swells)
+    const cytoplasm = new THREE.Mesh(
+      new THREE.BoxGeometry(CELL * 0.92, CELL * 0.92, CELL * 0.92),
+      new THREE.MeshPhysicalMaterial({
+        color: 0xeac4d2, transparent: true, opacity: 0.55,
+        transmission: 0.3, roughness: 0.3, side: THREE.DoubleSide,
+      })
+    );
+    cellGroup.add(cytoplasm);
+
+    // Central vacuole (pink-tinged sphere)
+    const vacuole = new THREE.Mesh(
+      new THREE.SphereGeometry(CELL * 0.35, 24, 18),
+      new THREE.MeshPhysicalMaterial({
+        color: 0xc2185b, transparent: true, opacity: 0.45,
+        transmission: 0.5, roughness: 0.25,
+      })
+    );
+    cellGroup.add(vacuole);
+
+    // Nucleus (small dark sphere off-centre)
+    const nucleus = new THREE.Mesh(
+      new THREE.SphereGeometry(CELL * 0.12, 16, 12),
+      new THREE.MeshStandardMaterial({ color: 0x1a1f2e, roughness: 0.5 })
+    );
+    nucleus.position.set(CELL * 0.25, CELL * 0.15, CELL * 0.18);
+    cellGroup.add(nucleus);
+
+    // ── Status label sprite floating above the cell ────────────────────
+    const labelCanvas = document.createElement('canvas');
+    labelCanvas.width = 480; labelCanvas.height = 80;
+    const labelTex = new THREE.CanvasTexture(labelCanvas);
+    labelTex.colorSpace = THREE.SRGBColorSpace;
+    const labelSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: labelTex, transparent: true }));
+    labelSprite.scale.set(0.24, 0.04, 1);
+    labelSprite.position.set(0, 0.27, 0);
+    scene.add(labelSprite);
+    const drawLabel = (text, bg) => {
+      const ctx = labelCanvas.getContext('2d');
+      ctx.clearRect(0, 0, 480, 80);
+      ctx.fillStyle = bg; ctx.fillRect(0, 0, 480, 80);
+      ctx.strokeStyle = '#1a1f2e'; ctx.lineWidth = 4; ctx.strokeRect(2, 2, 476, 76);
+      ctx.fillStyle = '#fefcf3';
+      ctx.font = "bold 26px 'IBM Plex Mono', monospace";
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(text, 240, 40);
+      labelTex.needsUpdate = true;
+    };
+
+    // ── Water molecule pool (rendered as small blue spheres) ───────────
+    const moleculeMat = new THREE.MeshStandardMaterial({
+      color: 0x4287f5, transparent: true, opacity: 0.85, roughness: 0.2,
+    });
+    const moleculeGeom = new THREE.SphereGeometry(0.0035, 8, 8);
+    const molecules = [];
+    for (let i = 0; i < 18; i++) {
+      const m = new THREE.Mesh(moleculeGeom, moleculeMat);
+      m.userData = {
+        angle: (i / 18) * Math.PI * 2,
+        elev: -0.4 + Math.random() * 0.8,
+        phase: Math.random(),
+      };
+      m.visible = false;
+      cellGroup.add(m);
+      molecules.push(m);
+    }
+
+    sceneRef.current = { scene, camera, renderer, dispose };
+    const detach = attachOrbitDrag(camera, renderer.domElement, { lookY: 0.13 });
+
+    let raf;
+    let prevLabelState = null;
+    const animate = () => {
+      const s = soluteRef.current;
+      const inside = 0.5;
+      const diff = s - inside;   // + → water leaves cell → shrink
+      // Target scale: 0.55 (very plasmolysed) to 1.1 (turgid)
+      const targetScale = Math.max(0.55, Math.min(1.1, 1 - diff * 0.7));
+      cytoplasm.scale.lerp(new THREE.Vector3(targetScale, targetScale, targetScale), 0.08);
+      vacuole.scale.copy(cytoplasm.scale);
+      nucleus.position.set(CELL * 0.25 * cytoplasm.scale.x, CELL * 0.15 * cytoplasm.scale.x, CELL * 0.18 * cytoplasm.scale.x);
+
+      setFluid(s);
+
+      // Water molecule motion — flow inward (diff < 0) or outward (diff > 0)
+      const flowMag = Math.abs(diff);
+      const flowing = flowMag > 0.04;
+      molecules.forEach((m) => {
+        m.visible = flowing;
+        if (!flowing) return;
+        m.userData.phase += 0.012 * (0.5 + flowMag * 1.5);
+        if (m.userData.phase > 1) m.userData.phase = 0;
+        const p = m.userData.phase;
+        // Outward when diff > 0 (going from inside to outside): radius grows
+        // Inward when diff < 0: radius shrinks from outer to membrane
+        const r = diff > 0
+          ? CELL * 0.5 + p * CELL * 1.0
+          : CELL * 1.5 - p * CELL * 1.0;
+        m.position.set(
+          Math.cos(m.userData.angle) * r,
+          m.userData.elev * CELL * 0.3,
+          Math.sin(m.userData.angle) * r
+        );
+        m.material.opacity = 0.85 * Math.sin(p * Math.PI);
+      });
+
+      // Status label
+      let labelState;
+      if (s < 0.35) labelState = 'HYPO';
+      else if (s > 0.65) labelState = 'HYPER';
+      else labelState = 'ISO';
+      if (labelState !== prevLabelState) {
+        if (labelState === 'HYPO') drawLabel('HYPOTONIC · cell is TURGID', '#2e7d32');
+        else if (labelState === 'HYPER') drawLabel('HYPERTONIC · PLASMOLYSED', '#c2185b');
+        else drawLabel('ISOTONIC · cell is flaccid', '#1a1f2e');
+        prevLabelState = labelState;
+      }
+
+      renderer.render(scene, camera);
+      raf = requestAnimationFrame(animate);
+    };
+    drawLabel('ISOTONIC · cell is flaccid', '#1a1f2e');
+    raf = requestAnimationFrame(animate);
+
+    return () => { cancelAnimationFrame(raf); detach(); dispose(); };
+  }, []);
+
+  const stateBg = solute < 0.35 ? '#2e7d32' : solute > 0.65 ? '#c2185b' : '#1a1f2e';
 
   return (
-    <div className="my-6 p-4" style={{
-      backgroundColor: '#fff',
-      border: '1px solid rgba(26,31,46,0.2)',
-    }}>
+    <div className="my-6">
       <div className="text-[10px] uppercase mb-3 opacity-65"
-        style={{ fontFamily: mono, letterSpacing: '0.28em', color: PINK }}>
-        Try it — drag to change the solution outside the cell
+        style={{ fontFamily: mono, letterSpacing: '0.28em', color: '#c2185b' }}>
+        Try it — change the solution outside the cell
       </div>
+      <div ref={mountRef}
+        style={{
+          width: '100%',
+          aspectRatio: '16/10',
+          backgroundColor: '#f5f1e3',
+          border: '1px solid rgba(26,31,46,0.2)',
+          overflow: 'hidden',
+          cursor: 'grab',
+        }} />
+      <div className="text-[9px] uppercase opacity-50 text-right mt-1"
+        style={{ fontFamily: mono, letterSpacing: '0.2em' }}>drag to rotate the apparatus</div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr', gap: '1.5rem', alignItems: 'center' }}>
-        {/* Cell visual */}
-        <svg viewBox="0 0 260 190" style={{ width: '100%', height: 'auto' }}>
-          {/* Outside solution */}
-          <rect x="0" y="0" width="260" height="190"
-            fill={solute > 0.65 ? '#fdebef' : solute < 0.35 ? '#e3f2fd' : '#f5f5f5'}
-            opacity="0.5" />
-          {/* Cell wall (rigid box) */}
-          <rect x={cx - baseW / 2} y={cy - baseH / 2} width={baseW} height={baseH}
-            fill="none" stroke={GREEN} strokeWidth="3.5" />
-          {/* Cell membrane + cytoplasm (shrinks/swells) */}
-          <rect x={cx - innerW / 2} y={cy - innerH / 2} width={innerW} height={innerH}
-            fill="#d0e5d8" stroke={NAVY} strokeWidth="1.2"
-            style={{ transition: 'all 0.3s ease-out' }} />
-          {/* Vacuole */}
-          <rect x={cx - innerW / 2 + 10} y={cy - innerH / 2 + 10}
-            width={Math.max(0, innerW - 20)} height={Math.max(0, innerH - 20)}
-            fill="#c2185b" opacity="0.15" stroke={PINK} strokeWidth="0.8"
-            style={{ transition: 'all 0.3s ease-out' }} />
-          {/* Labels */}
-          <text x={cx} y="20" fontFamily={mono} fontSize="9" textAnchor="middle" fill={GREEN}>cell wall</text>
-          <text x={cx} y={cy + 5} fontFamily={mono} fontSize="9" textAnchor="middle" fill={NAVY}>cell</text>
-          {solute > 0.65 && (
-            <>
-              <line x1={cx - baseW / 2 - 5} y1={cy} x2={cx - innerW / 2 - 2} y2={cy} stroke={PINK} strokeWidth="1" />
-              <text x={cx - baseW / 2 - 8} y={cy + 3} fontFamily={mono} fontSize="8" textAnchor="end" fill={PINK}>gap</text>
-            </>
-          )}
-        </svg>
-
-        {/* Controls + readout */}
-        <div>
-          <label>
-            <div className="text-[11px] uppercase mb-1" style={{ fontFamily: mono, letterSpacing: '0.18em' }}>
-              Outside solute: <strong style={{ color: state.color }}>{(solute * 100).toFixed(0)} %</strong>
-            </div>
-            <input type="range" min="0" max="1" step="0.01" value={solute}
-              onChange={(e) => setSolute(Number(e.target.value))}
-              style={{ width: '100%', accentColor: state.color }} />
-            <div className="flex justify-between text-[9px] opacity-55 mt-0.5" style={{ fontFamily: mono }}>
-              <span>pure water</span>
-              <span>same as inside</span>
-              <span>concentrated</span>
-            </div>
-          </label>
-
-          <div className="mt-4 p-3" style={{ borderLeft: `3px solid ${state.color}`, backgroundColor: `${state.color}10` }}>
-            <div className="text-[11px] uppercase mb-1"
-              style={{ fontFamily: mono, letterSpacing: '0.22em', color: state.color, fontWeight: 600 }}>
-              {state.name}
-            </div>
-            <div className="text-[12px] leading-snug" style={{ fontFamily: serif }}
-              dangerouslySetInnerHTML={{
-                __html: state.msg.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-              }} />
-          </div>
+      <label className="block mt-3">
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="text-[11px] uppercase" style={{ fontFamily: mono, letterSpacing: '0.2em' }}>
+            outside solute concentration
+          </span>
+          <span className="text-[11px] uppercase font-bold px-2 py-0.5"
+            style={{ fontFamily: mono, letterSpacing: '0.2em', backgroundColor: stateBg, color: '#fefcf3' }}>
+            {(solute * 100).toFixed(0)} %
+          </span>
         </div>
-      </div>
+        <input type="range" min="0" max="1" step="0.01" value={solute}
+          onChange={(e) => setSolute(Number(e.target.value))}
+          style={{ width: '100%', accentColor: stateBg }} />
+        <div className="flex justify-between text-[9px] opacity-60 mt-0.5" style={{ fontFamily: mono }}>
+          <span>0 % — pure water</span>
+          <span>50 % — same as inside</span>
+          <span>100 % — saturated</span>
+        </div>
+      </label>
     </div>
   );
 }
