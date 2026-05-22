@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 
 const mono = '"IBM Plex Mono", monospace';
 
@@ -22,11 +22,46 @@ function Md({ text, className }) {
   return <span className={className} dangerouslySetInnerHTML={{ __html: renderMd(text) }} />;
 }
 
+// "1(a)"        → { main: 1 }
+// "4(a)(ii)"    → { main: 4 }
+// "7(a)"        → { main: 7 }
+function parseMainNumber(qNumber) {
+  const m = String(qNumber || "").match(/^(\d+)/);
+  return m ? parseInt(m[1], 10) : 0;
+}
+
+// Split a prompt into (stem, body) at the first sub-part marker like "**(a)**".
+// Multiple sub-parts of the same main question repeat the same stem in their
+// prompts — we strip it out so the card shows the stem ONCE.
+function splitStemAndBody(prompt) {
+  if (!prompt) return { stem: "", body: "" };
+  const idx = prompt.indexOf("**(");
+  if (idx === -1) return { stem: "", body: prompt.trim() };
+  return {
+    stem: prompt.slice(0, idx).trim(),
+    body: prompt.slice(idx).trim(),
+  };
+}
+
+// Group a flat list of rows into [{ main, items: [...] }, ...] in main order.
+function groupQuestions(questions) {
+  const groups = new Map();
+  questions.forEach((q) => {
+    const main = parseMainNumber(q.q_number);
+    if (!groups.has(main)) groups.set(main, { main, items: [] });
+    const { stem, body } = splitStemAndBody(q.prompt);
+    groups.get(main).items.push({ ...q, stem, body });
+  });
+  return Array.from(groups.values()).sort((a, b) => a.main - b.main);
+}
+
 export default function PastPaperQuiz({ questions, totalMarks }) {
   const [answers, setAnswers] = useState({});
   const [submitted, setSubmitted] = useState(false);
 
   const setAnswer = (qid, value) => setAnswers((prev) => ({ ...prev, [qid]: value }));
+
+  const groups = useMemo(() => groupQuestions(questions), [questions]);
 
   const score = useMemo(() => {
     if (!submitted) return null;
@@ -46,12 +81,12 @@ export default function PastPaperQuiz({ questions, totalMarks }) {
 
   return (
     <div className="space-y-5">
-      {questions.map((q) => (
-        <QuestionCard
-          key={q.id}
-          q={q}
-          answer={answers[q.id]}
-          onAnswer={(v) => setAnswer(q.id, v)}
+      {groups.map((group) => (
+        <QuestionGroupCard
+          key={group.main}
+          group={group}
+          answers={answers}
+          setAnswer={setAnswer}
           submitted={submitted}
         />
       ))}
@@ -99,80 +134,127 @@ export default function PastPaperQuiz({ questions, totalMarks }) {
   );
 }
 
-function QuestionCard({ q, answer, onAnswer, submitted }) {
-  const isAuto = q.type !== "free_text";
-  const correct = submitted && isAuto && isAutoCorrect(q, answer);
-  const wrong = submitted && isAuto && !isAutoCorrect(q, answer);
+// Render one card for a whole numbered question (Q1, Q2, …).
+// Sub-parts share the same card. Stem text and diagram URLs are de-duplicated
+// across sub-parts so they appear at most once each within the card (and a
+// second time only if a *different* stem/diagram is introduced lower down).
+function QuestionGroupCard({ group, answers, setAnswer, submitted }) {
+  const totalGroupMarks = group.items.reduce((s, it) => s + (it.marks || 0), 0);
+
+  let lastStem = null;
+  let lastDiagram = null;
+  const plan = group.items.map((item) => {
+    const showStem = item.stem && item.stem !== lastStem;
+    const showDiagram = item.diagram_url && item.diagram_url !== lastDiagram;
+    if (item.stem) lastStem = item.stem;
+    if (item.diagram_url) lastDiagram = item.diagram_url;
+    return { item, showStem, showDiagram };
+  });
 
   return (
     <article
       className="bg-white border p-6 sm:p-8"
-      style={{ borderColor: correct ? "#2e7d32" : wrong ? "#c0392b" : "rgba(26,31,46,0.15)" }}
+      style={{ borderColor: "rgba(26,31,46,0.15)" }}
     >
-      <header className="flex items-baseline justify-between gap-4 mb-3">
+      <header className="flex items-baseline justify-between gap-4 mb-3 pb-3 border-b"
+        style={{ borderColor: "rgba(26,31,46,0.1)" }}>
         <div className="text-[10px] uppercase opacity-70" style={{ fontFamily: mono, letterSpacing: "0.28em" }}>
-          Question {q.q_number}
+          Question {group.main}
         </div>
-        <div className="flex items-center gap-3 text-[10px] uppercase opacity-70"
+        <div className="text-[10px] uppercase opacity-70"
           style={{ fontFamily: mono, letterSpacing: "0.22em" }}>
-          {q.tier === "paid" && <span style={{ color: "#b88200" }}>AI · paid</span>}
-          <span className="px-2 py-0.5 border" style={{ borderColor: "rgba(26,31,46,0.25)" }}>
-            [{q.marks}]
-          </span>
+          [{totalGroupMarks}]
         </div>
       </header>
 
-      <Md text={q.prompt} className="block text-[15px] leading-relaxed" />
+      <div className="space-y-4">
+        {plan.map(({ item, showStem, showDiagram }, idx) => (
+          <Fragment key={item.id}>
+            {showStem && (
+              <div className="text-[15px] leading-relaxed">
+                <Md text={item.stem} />
+              </div>
+            )}
+            {showDiagram && (
+              <div className="my-4 flex justify-center">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={item.diagram_url}
+                  alt={`Figure for question ${group.main}`}
+                  className="max-w-full"
+                  style={{ maxHeight: 360 }}
+                />
+              </div>
+            )}
+            <SubPart
+              item={item}
+              answer={answers[item.id]}
+              onAnswer={(v) => setAnswer(item.id, v)}
+              submitted={submitted}
+              isLast={idx === plan.length - 1}
+            />
+          </Fragment>
+        ))}
+      </div>
+    </article>
+  );
+}
 
-      {q.diagram_url && (
-        <div className="my-5 flex justify-center">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={q.diagram_url}
-            alt={`Figure for question ${q.q_number}`}
-            className="max-w-full"
-            style={{ maxHeight: 360 }}
-          />
+function SubPart({ item, answer, onAnswer, submitted, isLast }) {
+  const isAuto = item.type !== "free_text";
+  const correct = submitted && isAuto && isAutoCorrect(item, answer);
+  const wrong = submitted && isAuto && !isAutoCorrect(item, answer);
+
+  return (
+    <div className={isLast ? "" : "pb-4 border-b"} style={{ borderColor: "rgba(26,31,46,0.06)" }}>
+      <div className="flex items-baseline justify-between gap-4 mb-2">
+        <Md text={item.body} className="block text-[15px] leading-relaxed" />
+        <div className="flex items-center gap-2 text-[10px] uppercase opacity-70 shrink-0"
+          style={{ fontFamily: mono, letterSpacing: "0.22em" }}>
+          {item.tier === "paid" && <span style={{ color: "#b88200" }}>AI</span>}
+          <span className="px-2 py-0.5 border" style={{ borderColor: "rgba(26,31,46,0.25)" }}>
+            [{item.marks}]
+          </span>
         </div>
-      )}
+      </div>
 
-      <div className="mt-4">
-        <AnswerInput q={q} answer={answer} onAnswer={onAnswer} disabled={submitted} />
+      <div className="mt-2">
+        <AnswerInput q={item} answer={answer} onAnswer={onAnswer} disabled={submitted} />
       </div>
 
       {submitted && (
-        <div className="mt-5 pt-5 border-t" style={{ borderColor: "rgba(26,31,46,0.12)" }}>
+        <div className="mt-4">
           {isAuto && (
             <div className="text-xs mb-2" style={{ fontFamily: mono, letterSpacing: "0.1em" }}>
               {correct ? (
-                <span style={{ color: "#2e7d32" }}>✓ CORRECT — {q.marks} mark{q.marks === 1 ? "" : "s"}</span>
+                <span style={{ color: "#2e7d32" }}>✓ CORRECT — {item.marks} mark{item.marks === 1 ? "" : "s"}</span>
               ) : (
                 <span style={{ color: "#c0392b" }}>✗ NOT MATCHED</span>
               )}
             </div>
           )}
-          {q.memo && (
-            <div className="text-[13px] mb-3 bg-amber-50 border-l-2 p-3"
+          {item.memo && (
+            <div className="text-[13px] mb-2 bg-amber-50 border-l-2 p-3"
               style={{ borderColor: "#b88200" }}>
               <div className="text-[10px] uppercase opacity-70 mb-1"
                 style={{ fontFamily: mono, letterSpacing: "0.22em" }}>
                 Mark scheme
               </div>
-              <Md text={q.memo} className="block" />
+              <Md text={item.memo} className="block" />
             </div>
           )}
-          {q.explanation && (
+          {item.explanation && (
             <div className="text-[13px] opacity-85 leading-relaxed">
               <div className="text-[10px] uppercase opacity-70 mb-1"
                 style={{ fontFamily: mono, letterSpacing: "0.22em" }}>
                 Explanation
               </div>
-              <Md text={q.explanation} />
+              <Md text={item.explanation} />
             </div>
           )}
         </div>
       )}
-    </article>
+    </div>
   );
 }
 
