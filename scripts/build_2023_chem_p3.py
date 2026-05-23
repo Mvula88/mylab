@@ -14,7 +14,7 @@ MIGRATION_PATH = ROOT / "supabase" / "migrations" / "20260525160000_chemistry_ns
 
 DIAGRAMS = {
     "cleaning-bottle":   ("page-02", 0.04, 0.26, 0.30, 0.62),
-    "purification-abc":  ("page-02", 0.32, 0.50, 0.06, 0.92),
+    "purification-abc":  ("page-02", 0.41, 0.58, 0.06, 0.94),
     "caco3-apparatus":   ("page-03", 0.06, 0.42, 0.12, 0.84),
     "tests-table-A":     ("page-07", 0.04, 0.56, 0.04, 0.94),
 }
