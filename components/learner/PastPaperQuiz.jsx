@@ -208,7 +208,9 @@ function SubPart({ item, answer, onAnswer, submitted, isLast }) {
   return (
     <div className={isLast ? "" : "pb-4 border-b"} style={{ borderColor: "rgba(26,31,46,0.06)" }}>
       <div className="flex items-baseline justify-between gap-4 mb-2">
-        <Md text={item.body} className="block text-[15px] leading-relaxed" />
+        <div className="flex-1 min-w-0 text-[15px] leading-relaxed break-words">
+          <Md text={item.body} className="block" />
+        </div>
         <div className="flex items-center gap-2 text-[10px] uppercase opacity-70 shrink-0"
           style={{ fontFamily: mono, letterSpacing: "0.22em" }}>
           {item.tier === "paid" && <span style={{ color: "#b88200" }}>AI</span>}
@@ -330,13 +332,13 @@ function AnswerInput({ q, answer, onAnswer, disabled }) {
 
   if (q.type === "fill_in") {
     return (
-      <input
-        type="text"
+      <textarea
         value={answer || ""}
         onChange={(e) => onAnswer(e.target.value)}
         disabled={disabled}
-        className="w-full p-3 border bg-white"
-        style={{ borderColor: "rgba(26,31,46,0.25)" }}
+        rows={2}
+        className="w-full p-3 border bg-white leading-relaxed resize-y"
+        style={{ borderColor: "rgba(26,31,46,0.25)", minHeight: "3rem" }}
         placeholder="Type your answer…"
       />
     );
