@@ -235,6 +235,16 @@ function SubPart({ item, answer, onAnswer, submitted, isLast }) {
               )}
             </div>
           )}
+          {item.type === "calculation" && answer && typeof answer === "object" && answer.working && (
+            <div className="text-[13px] mb-2 bg-stone-50 border-l-2 p-3"
+              style={{ borderColor: "rgba(26,31,46,0.25)" }}>
+              <div className="text-[10px] uppercase opacity-70 mb-1"
+                style={{ fontFamily: mono, letterSpacing: "0.22em" }}>
+                Your working
+              </div>
+              <pre className="whitespace-pre-wrap font-mono text-[12px] leading-relaxed">{answer.working}</pre>
+            </div>
+          )}
           {item.memo && (
             <div className="text-[13px] mb-2 bg-amber-50 border-l-2 p-3"
               style={{ borderColor: "#b88200" }}>
@@ -344,6 +354,65 @@ function AnswerInput({ q, answer, onAnswer, disabled }) {
     );
   }
 
+  if (q.type === "calculation") {
+    // answer is an object: { working: string, value: string, unit: string }
+    const a = (answer && typeof answer === "object") ? answer : { working: "", value: "", unit: "" };
+    const update = (patch) => onAnswer({ ...a, ...patch });
+    const expectedUnit = (q.correct && q.correct.unit) || "";
+    return (
+      <div className="space-y-3">
+        <div>
+          <div className="text-[10px] uppercase opacity-70 mb-1"
+            style={{ fontFamily: mono, letterSpacing: "0.22em" }}>
+            Working — show formula, substitution, calculation
+          </div>
+          <textarea
+            value={a.working || ""}
+            onChange={(e) => update({ working: e.target.value })}
+            disabled={disabled}
+            rows={4}
+            className="w-full p-3 border bg-white font-mono text-[13px] leading-relaxed"
+            style={{ borderColor: "rgba(26,31,46,0.25)" }}
+            placeholder={"e.g.\nformula: F = ma\nF = 2 × 10 = …"}
+          />
+        </div>
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="flex-1 min-w-[8rem]">
+            <div className="text-[10px] uppercase opacity-70 mb-1"
+              style={{ fontFamily: mono, letterSpacing: "0.22em" }}>
+              Final answer
+            </div>
+            <input
+              type="text"
+              inputMode="decimal"
+              value={a.value || ""}
+              onChange={(e) => update({ value: e.target.value })}
+              disabled={disabled}
+              className="w-full p-3 border bg-white font-mono"
+              style={{ borderColor: "rgba(26,31,46,0.25)" }}
+              placeholder="number"
+            />
+          </div>
+          <div className="w-28">
+            <div className="text-[10px] uppercase opacity-70 mb-1"
+              style={{ fontFamily: mono, letterSpacing: "0.22em" }}>
+              Unit{expectedUnit ? "" : " (if any)"}
+            </div>
+            <input
+              type="text"
+              value={a.unit || ""}
+              onChange={(e) => update({ unit: e.target.value })}
+              disabled={disabled}
+              className="w-full p-3 border bg-white font-mono"
+              style={{ borderColor: "rgba(26,31,46,0.25)" }}
+              placeholder={expectedUnit || "e.g. m/s"}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // free_text — textarea sized by marks
   const rows = Math.min(8, Math.max(3, (q.marks || 1) + 1));
   return (
@@ -393,6 +462,30 @@ function isAutoCorrect(q, answer) {
       return q.correct.must_contain.every((needle) => userAns.includes(cmp(needle)));
     }
     return false;
+  }
+
+  if (q.type === "calculation") {
+    if (!q.correct || !answer || typeof answer !== "object") return false;
+    const got = parseFloat(answer.value);
+    const want = parseFloat(q.correct.value);
+    if (Number.isNaN(got) || Number.isNaN(want)) return false;
+    // Tolerance: absolute number, or a fraction (≤1 = fractional, >1 = absolute).
+    const tolRaw = q.correct.tolerance;
+    let tol = 0;
+    if (tolRaw != null) {
+      const t = parseFloat(tolRaw);
+      tol = t <= 1 ? Math.abs(want) * t : t;
+    }
+    const numericOk = Math.abs(got - want) <= (tol || Math.abs(want) * 0.02);
+    if (!numericOk) return false;
+    // Unit check (case-insensitive, ignores spaces). If accept_units not provided,
+    // only the numeric value is required.
+    const accept = Array.isArray(q.correct.accept_units) ? q.correct.accept_units : null;
+    if (!accept || accept.length === 0) return true;
+    const norm = (s) => String(s || "").toLowerCase().replace(/\s+/g, "");
+    const userUnit = norm(answer.unit);
+    if (!userUnit) return false;
+    return accept.some((u) => norm(u) === userUnit);
   }
 
   return false;
