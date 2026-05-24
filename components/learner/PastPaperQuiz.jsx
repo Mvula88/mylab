@@ -69,7 +69,7 @@ export default function PastPaperQuiz({ questions, totalMarks }) {
     let autoMax = 0;
     let pendingMarks = 0;
     questions.forEach((q) => {
-      if (q.type === "free_text") {
+      if (q.type === "free_text" || q.type === "essay" || q.type === "drawing") {
         pendingMarks += q.marks || 0;
         return;
       }
@@ -200,8 +200,10 @@ function QuestionGroupCard({ group, answers, setAnswer, submitted }) {
   );
 }
 
+const MANUAL_TYPES = new Set(["free_text", "essay", "drawing"]);
+
 function SubPart({ item, answer, onAnswer, submitted, isLast }) {
-  const isAuto = item.type !== "free_text";
+  const isAuto = !MANUAL_TYPES.has(item.type);
   const correct = submitted && isAuto && isAutoCorrect(item, answer);
   const wrong = submitted && isAuto && !isAutoCorrect(item, answer);
 
@@ -409,6 +411,82 @@ function AnswerInput({ q, answer, onAnswer, disabled }) {
             />
           </div>
         </div>
+      </div>
+    );
+  }
+
+  if (q.type === "essay") {
+    // Section B style: 15-mark extended response. Big textarea + word target hint.
+    const wordsTarget = Math.max(80, (q.marks || 4) * 25);
+    const wordCount = (answer || "").trim().split(/\s+/).filter(Boolean).length;
+    return (
+      <div className="space-y-2">
+        <div className="text-[10px] uppercase opacity-70"
+          style={{ fontFamily: mono, letterSpacing: "0.22em" }}>
+          Essay answer — aim for ~{wordsTarget} words. Use full sentences. AI-marked against the memo.
+        </div>
+        <textarea
+          value={answer || ""}
+          onChange={(e) => onAnswer(e.target.value)}
+          disabled={disabled}
+          rows={14}
+          className="w-full p-3 border bg-white text-[14px] leading-relaxed"
+          style={{ borderColor: "rgba(26,31,46,0.25)", minHeight: "16rem" }}
+          placeholder="Write your essay here. Open with a clear point, support with examples, link back to the question…"
+        />
+        <div className="text-[11px] opacity-70 text-right" style={{ fontFamily: mono }}>
+          {wordCount} word{wordCount === 1 ? "" : "s"}
+        </div>
+      </div>
+    );
+  }
+
+  if (q.type === "drawing") {
+    // Drawing/graph/diagram: student describes (or sketches on paper then describes).
+    // a is an object: { description: string, imageDataUrl?: string }
+    const a = (answer && typeof answer === "object") ? answer : { description: "" };
+    const update = (patch) => onAnswer({ ...a, ...patch });
+    const handleFile = (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => update({ imageDataUrl: reader.result });
+      reader.readAsDataURL(file);
+    };
+    return (
+      <div className="space-y-3">
+        <div className="text-[10px] uppercase opacity-70"
+          style={{ fontFamily: mono, letterSpacing: "0.22em" }}>
+          Drawing / graph — sketch on paper, then describe in words below (or upload a photo)
+        </div>
+        <textarea
+          value={a.description || ""}
+          onChange={(e) => update({ description: e.target.value })}
+          disabled={disabled}
+          rows={6}
+          className="w-full p-3 border bg-white text-[14px] leading-relaxed"
+          style={{ borderColor: "rgba(26,31,46,0.25)", minHeight: "8rem" }}
+          placeholder="Describe what you would draw: shape of the line/curve, axis values, labels, key features (peaks, intercepts, gradients)…"
+        />
+        <div className="flex items-center gap-3 text-[12px]">
+          <label className="px-3 py-2 border cursor-pointer hover:bg-stone-50"
+            style={{ borderColor: "rgba(26,31,46,0.25)" }}>
+            <input type="file" accept="image/*" onChange={handleFile} disabled={disabled} className="hidden" />
+            {a.imageDataUrl ? "Replace photo" : "Upload photo of sketch (optional)"}
+          </label>
+          {a.imageDataUrl && (
+            <button type="button"
+              className="opacity-70 hover:opacity-100 underline"
+              onClick={() => update({ imageDataUrl: undefined })}
+              disabled={disabled}>
+              remove photo
+            </button>
+          )}
+        </div>
+        {a.imageDataUrl && (
+          <img src={a.imageDataUrl} alt="Your sketch" className="max-h-64 border"
+            style={{ borderColor: "rgba(26,31,46,0.25)" }} />
+        )}
       </div>
     );
   }
