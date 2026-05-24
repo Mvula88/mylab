@@ -218,7 +218,7 @@ QUESTIONS = [
         ],
         "commentary": "C [1 mark]. Fairly well answered (64%).",
         "explanation": "**Two things to read off an energy diagram:**\n\n1. **Activation energy (Ea) is ALWAYS POSITIVE** — it's energy ABSORBED to start the reaction. Even exothermic reactions need a 'push' to start. Energy *gained* over the peak = positive.\n\n2. **Enthalpy change (ΔH) — read the level shift:**\n   • Products **HIGHER** than reactants → **ENDOTHERMIC** (system absorbed energy) → ΔH **positive**\n   • Products LOWER → exothermic → ΔH negative\n\nHere products are HIGHER → endothermic + Ea positive → **C**.",
-        "diagram": ("page-05", 0.42, 0.62, 0.28, 0.72, "energy-diagram"),
+        "diagram": ("page-05", 0.53, 0.78, 0.18, 0.80, "energy-diagram"),
     },
     # ── Q19: fuel cell hydrogen + ? (text only) ──
     {
